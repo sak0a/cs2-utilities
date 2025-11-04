@@ -24,111 +24,81 @@ namespace CS2Utilities.Commands
         /// </summary>
         public void RegisterCommands()
         {
-            // Save preset command
-            _commandManager.RegisterCommand("savepreset", HandleSavePresetCommand,
-                "Save current server state as preset", "<name> [description]", "@css/root", 1, 2);
-
-            // Load preset command
-            _commandManager.RegisterCommand("loadpreset", HandleLoadPresetCommand,
-                "Load a saved preset", "<name>", "@css/root", 1, 1);
-
-            // List presets command
-            _commandManager.RegisterCommand("listpresets", HandleListPresetsCommand,
-                "List all saved presets", "", "@css/root", 0, 0);
-
-            // Delete preset command
-            _commandManager.RegisterCommand("deletepreset", HandleDeletePresetCommand,
-                "Delete a saved preset", "<name>", "@css/root", 1, 1);
-
-            // Show preset details command
-            _commandManager.RegisterCommand("presetinfo", HandlePresetInfoCommand,
-                "Show detailed preset information", "<name>", "@css/root", 1, 1);
-
-            // Add commands to preset
-            _commandManager.RegisterCommand("presetaddcmd", HandlePresetAddCommandCommand,
-                "Add command to preset", "<preset> <load|unload> <command>", "@css/root", 3, 3);
-
-            // Remove commands from preset
-            _commandManager.RegisterCommand("presetremovecmd", HandlePresetRemoveCommandCommand,
-                "Remove command from preset", "<preset> <load|unload> <command>", "@css/root", 3, 3);
-
-            // Show current preset
-            _commandManager.RegisterCommand("currentpreset", HandleCurrentPresetCommand,
-                "Show currently loaded preset", "", "@css/root", 0, 0);
+            // Unified preset command with subcommands
+            _commandManager.RegisterCommand("preset", HandlePresetCommand,
+                "Preset management", "<load|info|list> [presetname]", "@css/root", 1, 2);
         }
 
-        #region Save Preset Command
+        #region Preset Command Handler
 
         /// <summary>
-        /// Handle !savepreset command
+        /// Handle !preset command with subcommands
         /// </summary>
-        private bool HandleSavePresetCommand(CCSPlayerController? player, string[] args)
+        private bool HandlePresetCommand(CCSPlayerController? player, string[] args)
         {
-            try
+            if (args.Length == 0)
             {
-                var presetName = args[0];
-                var description = args.Length > 1 ? string.Join(" ", args.Skip(1)) : "";
-
-                // Validate preset name
-                if (string.IsNullOrWhiteSpace(presetName) || presetName.Length > 50)
-                {
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, "Invalid preset name. Must be 1-50 characters.", MessageType.Error);
-                    return false;
-                }
-
-                // Check if preset already exists
-                if (_presetManager.PresetExists(presetName))
-                {
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, $"Preset '{presetName}' already exists. Use a different name or delete the existing one first.", MessageType.Error);
-                    return false;
-                }
-
-                // Save the preset
-                if (_presetManager.SavePreset(presetName, description))
-                {
-                    var message = $"Saved preset '{presetName}' with current server settings";
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, message, MessageType.Success);
-                    else
-                        Console.WriteLine($"[CS2Utils] {message}");
-                    return true;
-                }
-                else
-                {
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, "Failed to save preset.", MessageType.Error);
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[CS2Utils] Error saving preset: {ex.Message}");
                 if (player != null)
-                    ChatUtils.PrintToPlayer(player, "Failed to save preset.", MessageType.Error);
+                    ChatUtils.PrintToPlayer(player, "Usage: !preset <load|info|list> [presetname]", MessageType.Error);
+                else
+                    Console.WriteLine("[CS2Utils] Usage: !preset <load|info|list> [presetname]");
                 return false;
+            }
+
+            var subcommand = args[0].ToLower();
+
+            switch (subcommand)
+            {
+                case "load":
+                    if (args.Length < 2)
+                    {
+                        if (player != null)
+                            ChatUtils.PrintToPlayer(player, "Usage: !preset load <presetname>", MessageType.Error);
+                        else
+                            Console.WriteLine("[CS2Utils] Usage: !preset load <presetname>");
+                        return false;
+                    }
+                    return HandleLoadPreset(player, args[1]);
+
+                case "info":
+                    if (args.Length < 2)
+                    {
+                        if (player != null)
+                            ChatUtils.PrintToPlayer(player, "Usage: !preset info <presetname>", MessageType.Error);
+                        else
+                            Console.WriteLine("[CS2Utils] Usage: !preset info <presetname>");
+                        return false;
+                    }
+                    return HandlePresetInfo(player, args[1]);
+
+                case "list":
+                    return HandleListPresets(player);
+
+                default:
+                    if (player != null)
+                        ChatUtils.PrintToPlayer(player, $"Unknown subcommand '{subcommand}'. Use: load, info, or list", MessageType.Error);
+                    else
+                        Console.WriteLine($"[CS2Utils] Unknown subcommand '{subcommand}'. Use: load, info, or list");
+                    return false;
             }
         }
 
         #endregion
 
-        #region Load Preset Command
+        #region Load Preset
 
         /// <summary>
-        /// Handle !loadpreset command
+        /// Handle preset load subcommand
         /// </summary>
-        private bool HandleLoadPresetCommand(CCSPlayerController? player, string[] args)
+        private bool HandleLoadPreset(CCSPlayerController? player, string presetName)
         {
             try
             {
-                var presetName = args[0];
-
                 // Check if preset exists
                 if (!_presetManager.PresetExists(presetName))
                 {
                     if (player != null)
-                        ChatUtils.PrintToPlayer(player, $"Preset '{presetName}' not found. Use !listpresets to see available presets.", MessageType.Error);
+                        ChatUtils.PrintToPlayer(player, $"Preset '{presetName}' not found. Use !preset list to see available presets.", MessageType.Error);
                     return false;
                 }
 
@@ -174,12 +144,12 @@ namespace CS2Utilities.Commands
 
         #endregion
 
-        #region List Presets Command
+        #region List Presets
 
         /// <summary>
-        /// Handle !listpresets command
+        /// Handle preset list subcommand
         /// </summary>
-        private bool HandleListPresetsCommand(CCSPlayerController? player, string[] args)
+        private bool HandleListPresets(CCSPlayerController? player)
         {
             try
             {
@@ -189,9 +159,9 @@ namespace CS2Utilities.Commands
                 if (presets.Count == 0)
                 {
                     if (player != null)
-                        ChatUtils.PrintToPlayer(player, "No presets saved. Use !savepreset to create one.", MessageType.Info);
+                        ChatUtils.PrintToPlayer(player, "No presets available.", MessageType.Info);
                     else
-                        Console.WriteLine("[CS2Utils] No presets saved");
+                        Console.WriteLine("[CS2Utils] No presets available");
                     return true;
                 }
 
@@ -225,64 +195,15 @@ namespace CS2Utilities.Commands
 
         #endregion
 
-        #region Delete Preset Command
+        #region Preset Info
 
         /// <summary>
-        /// Handle !deletepreset command
+        /// Handle preset info subcommand
         /// </summary>
-        private bool HandleDeletePresetCommand(CCSPlayerController? player, string[] args)
+        private bool HandlePresetInfo(CCSPlayerController? player, string presetName)
         {
             try
             {
-                var presetName = args[0];
-
-                // Check if preset exists
-                if (!_presetManager.PresetExists(presetName))
-                {
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, $"Preset '{presetName}' not found.", MessageType.Error);
-                    return false;
-                }
-
-                // Delete the preset
-                if (_presetManager.DeletePreset(presetName))
-                {
-                    var message = $"Deleted preset '{presetName}'";
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, message, MessageType.Success);
-                    else
-                        Console.WriteLine($"[CS2Utils] {message}");
-                    return true;
-                }
-                else
-                {
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, "Failed to delete preset.", MessageType.Error);
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[CS2Utils] Error deleting preset: {ex.Message}");
-                if (player != null)
-                    ChatUtils.PrintToPlayer(player, "Failed to delete preset.", MessageType.Error);
-                return false;
-            }
-        }
-
-        #endregion
-
-        #region Preset Info Command
-
-        /// <summary>
-        /// Handle !presetinfo command
-        /// </summary>
-        private bool HandlePresetInfoCommand(CCSPlayerController? player, string[] args)
-        {
-            try
-            {
-                var presetName = args[0];
-
                 // Check if preset exists
                 if (!_presetManager.PresetExists(presetName))
                 {
@@ -310,47 +231,6 @@ namespace CS2Utilities.Commands
                 Console.WriteLine($"[CS2Utils] Error showing preset info: {ex.Message}");
                 if (player != null)
                     ChatUtils.PrintToPlayer(player, "Failed to show preset info.", MessageType.Error);
-                return false;
-            }
-        }
-
-        #endregion
-
-        #region Current Preset Command
-
-        /// <summary>
-        /// Handle !currentpreset command
-        /// </summary>
-        private bool HandleCurrentPresetCommand(CCSPlayerController? player, string[] args)
-        {
-            try
-            {
-                var currentPreset = _presetManager.GetCurrentPresetName();
-                
-                if (string.IsNullOrEmpty(currentPreset))
-                {
-                    var message = "No preset currently loaded";
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, message, MessageType.Info);
-                    else
-                        Console.WriteLine($"[CS2Utils] {message}");
-                }
-                else
-                {
-                    var message = $"Current preset: {currentPreset}";
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, message, MessageType.Info);
-                    else
-                        Console.WriteLine($"[CS2Utils] {message}");
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[CS2Utils] Error showing current preset: {ex.Message}");
-                if (player != null)
-                    ChatUtils.PrintToPlayer(player, "Failed to show current preset.", MessageType.Error);
                 return false;
             }
         }

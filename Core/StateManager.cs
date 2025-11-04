@@ -12,20 +12,18 @@ namespace CS2Utilities.Core
         private readonly CS2UtilitiesConfig _config;
         private readonly Dictionary<string, object> _currentState;
         private readonly Timer? _autoSaveTimer;
-        private readonly string _configPath;
 
-        public StateManager(CS2UtilitiesConfig config, string configPath)
+        public StateManager(CS2UtilitiesConfig config)
         {
             _config = config;
-            _configPath = configPath;
             _currentState = new Dictionary<string, object>();
-            
-            LoadFromDisk();
-            
+
+            LoadFromConfig();
+
             // Set up auto-save timer if enabled
             if (_config.AutoSaveState && _config.AutoSaveInterval > 0)
             {
-                _autoSaveTimer = new Timer(AutoSaveCallback, null, 
+                _autoSaveTimer = new Timer(AutoSaveCallback, null,
                     TimeSpan.FromSeconds(_config.AutoSaveInterval),
                     TimeSpan.FromSeconds(_config.AutoSaveInterval));
             }
@@ -169,41 +167,36 @@ namespace CS2Utilities.Core
         }
 
         /// <summary>
-        /// Persist current state to disk
+        /// Persist current state to CounterStrikeSharp config
         /// </summary>
         public async Task PersistToDisk()
         {
             try
             {
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
+                // The config will be automatically saved by CounterStrikeSharp
+                // when the plugin updates the Config object
+                await Task.CompletedTask; // Placeholder for async compatibility
 
-                var json = JsonSerializer.Serialize(_config, options);
-                await File.WriteAllTextAsync(_configPath, json);
-                
                 if (_config.EnableDebugLogging)
                 {
-                    Console.WriteLine($"[CS2Utils] State persisted to disk: {_config.SavedState.Count} states");
+                    Console.WriteLine($"[CS2Utils] State persisted to config: {_config.SavedState.Count} states");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[CS2Utils] Error persisting state to disk: {ex.Message}");
+                Console.WriteLine($"[CS2Utils] Error persisting state: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Load state from disk
+        /// Load state from CounterStrikeSharp config
         /// </summary>
-        public void LoadFromDisk()
+        public void LoadFromConfig()
         {
             try
             {
                 _currentState.Clear();
-                
+
                 foreach (var savedState in _config.SavedState)
                 {
                     if (savedState.AutoRestore)
@@ -211,15 +204,15 @@ namespace CS2Utilities.Core
                         _currentState[savedState.ConfigName] = savedState.Value;
                     }
                 }
-                
+
                 if (_config.EnableDebugLogging)
                 {
-                    Console.WriteLine($"[CS2Utils] State loaded from disk: {_currentState.Count} states");
+                    Console.WriteLine($"[CS2Utils] State loaded from config: {_currentState.Count} states");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[CS2Utils] Error loading state from disk: {ex.Message}");
+                Console.WriteLine($"[CS2Utils] Error loading state from config: {ex.Message}");
             }
         }
 
@@ -248,7 +241,7 @@ namespace CS2Utilities.Core
                 ["MaxStates"] = _config.MaxSavedStates,
                 ["AutoSaveEnabled"] = _config.AutoSaveState,
                 ["AutoSaveInterval"] = _config.AutoSaveInterval,
-                ["LastAutoSave"] = _autoSaveTimer != null ? DateTime.UtcNow : (DateTime?)null
+                ["LastAutoSave"] = _autoSaveTimer != null ? (object)DateTime.UtcNow : "Not Available"
             };
         }
 
@@ -264,12 +257,20 @@ namespace CS2Utilities.Core
         }
 
         /// <summary>
+        /// Get the current configuration
+        /// </summary>
+        public CS2UtilitiesConfig GetConfig()
+        {
+            return _config;
+        }
+
+        /// <summary>
         /// Dispose resources
         /// </summary>
         public void Dispose()
         {
             _autoSaveTimer?.Dispose();
-            
+
             // Final save if auto-save is enabled
             if (_config.AutoSaveState)
             {

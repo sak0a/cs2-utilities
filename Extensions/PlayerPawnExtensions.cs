@@ -102,7 +102,7 @@ namespace CS2Utilities.Extensions
             if (pawn == null || !pawn.IsValid)
                 return;
 
-            pawn.Health = Math.Max(0, Math.Min(1000, health));
+            pawn.Health = health;
 
             if (allowOverflow && health > pawn.MaxHealth)
                 pawn.MaxHealth = health;
@@ -158,7 +158,19 @@ namespace CS2Utilities.Extensions
             if (pawn == null || !pawn.IsValid)
                 return;
 
-            pawn.RemoveWeapons();
+            // Remove all weapons by iterating through weapon services
+            var weaponServices = pawn.WeaponServices;
+            if (weaponServices?.MyWeapons != null)
+            {
+                for (int i = weaponServices.MyWeapons.Count - 1; i >= 0; i--)
+                {
+                    var weapon = weaponServices.MyWeapons[i];
+                    if (weapon.IsValid && weapon.Value != null)
+                    {
+                        weapon.Value.Remove();
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -171,7 +183,15 @@ namespace CS2Utilities.Extensions
             if (pawn == null || !pawn.IsValid || string.IsNullOrEmpty(weaponName))
                 return;
 
-            pawn.GiveNamedItem(weaponName);
+            // Use server command to give weapon
+            var controller = pawn.GetController();
+            if (controller != null)
+            {
+                Server.NextFrame(() =>
+                {
+                    Server.ExecuteCommand($"give {controller.PlayerName} {weaponName}");
+                });
+            }
         }
 
         #endregion
@@ -257,8 +277,8 @@ namespace CS2Utilities.Extensions
             if (pawn == null || !pawn.IsValid)
                 return;
 
-            pawn.AbsVelocity = velocity;
-            Utilities.SetStateChanged(pawn, "CBaseEntity", "m_vecAbsVelocity");
+            // Use teleport with velocity parameter to set velocity
+            pawn.Teleport(pawn.AbsOrigin, pawn.AbsRotation, velocity);
         }
 
         /// <summary>

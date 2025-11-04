@@ -8,7 +8,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="CounterStrikeSharp.API" Version="*"/>
+        <PackageReference Include="CounterStrikeSharp.API" Version="1.0.343" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Remove="docs\WORKSHOP_QUICK_SETUP.md" />
     </ItemGroup>
 
 </Project>

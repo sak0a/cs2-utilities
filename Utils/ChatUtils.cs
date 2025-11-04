@@ -87,10 +87,8 @@ namespace CS2Utilities.Utils
         public static string FormatMessage(string message, MessageType messageType = MessageType.Default)
         {
             var prefix = GetPrefix();
-            var messageColor = GetMessageColor(messageType);
-            var defaultColor = GetChatColor(_config?.ChatColors.DefaultColor ?? "Grey");
             
-            return $"{prefix} {ChatColors.Default}| {messageColor}{message}";
+            return $" {ChatColors.DarkBlue}{prefix} | {ChatColors.Grey}{message}";
         }
 
         /// <summary>

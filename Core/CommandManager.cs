@@ -48,6 +48,32 @@ namespace CS2Utilities.Core
             _targetResolver = targetResolver;
             _commands = new Dictionary<string, CommandInfo>();
             _playerCooldowns = new Dictionary<string, DateTime>();
+
+            // Initialize default commands if not present
+            _config.InitializeDefaultCommands();
+        }
+
+        /// <summary>
+        /// Get command configuration from config or create default
+        /// </summary>
+        private Models.CommandConfig GetCommandConfig(string commandName)
+        {
+            if (_config.Commands.TryGetValue(commandName, out var config))
+            {
+                return config;
+            }
+
+            // Return default configuration
+            return new Models.CommandConfig
+            {
+                Enabled = true,
+                Permission = _config.DefaultPermission,
+                Description = "",
+                Usage = "",
+                Aliases = new List<string>(),
+                MinArgs = 0,
+                MaxArgs = 10
+            };
         }
 
         /// <summary>
@@ -60,28 +86,56 @@ namespace CS2Utilities.Core
         /// <param name="permission">Required permission (defaults to config default)</param>
         /// <param name="minArgs">Minimum number of arguments</param>
         /// <param name="maxArgs">Maximum number of arguments (-1 for unlimited)</param>
-        public void RegisterCommand(string name, CommandHandler handler, string description = "", 
+        public void RegisterCommand(string name, CommandHandler handler, string description = "",
             string usage = "", string? permission = null, int minArgs = 0, int maxArgs = -1)
         {
             var normalizedName = name.ToLower();
-            
+
+            // Get command configuration from config
+            var commandConfig = GetCommandConfig(normalizedName);
+
+            // Check if command is disabled
+            if (!commandConfig.Enabled)
+            {
+                if (_config.EnableDebugLogging)
+                {
+                    Console.WriteLine($"[CS2Utils] Command '{name}' is disabled in configuration");
+                }
+                return;
+            }
+
             var commandInfo = new CommandInfo
             {
                 Name = name,
-                Description = description,
-                Usage = usage,
-                Permission = permission ?? _permissionManager.GetRequiredPermission(normalizedName),
+                Description = !string.IsNullOrEmpty(commandConfig.Description) ? commandConfig.Description : description,
+                Usage = !string.IsNullOrEmpty(commandConfig.Usage) ? commandConfig.Usage : usage,
+                Permission = !string.IsNullOrEmpty(commandConfig.Permission) ? commandConfig.Permission :
+                            (permission ?? _config.DefaultPermission),
                 Handler = handler,
-                MinArgs = minArgs,
-                MaxArgs = maxArgs,
-                Enabled = !_permissionManager.IsCommandDisabled(name)
+                MinArgs = commandConfig.MinArgs > 0 ? commandConfig.MinArgs : minArgs,
+                MaxArgs = commandConfig.MaxArgs > 0 ? commandConfig.MaxArgs : maxArgs,
+                Enabled = commandConfig.Enabled
             };
 
             _commands[normalizedName] = commandInfo;
 
+            // Register aliases
+            foreach (var alias in commandConfig.Aliases)
+            {
+                var normalizedAlias = alias.ToLower();
+                if (!_commands.ContainsKey(normalizedAlias))
+                {
+                    _commands[normalizedAlias] = commandInfo;
+                }
+            }
+
             if (_config.EnableDebugLogging)
             {
-                Console.WriteLine($"[CS2Utils] Registered command: {name}");
+                Console.WriteLine($"[CS2Utils] Registered command: {name} (permission: {commandInfo.Permission})");
+                if (commandConfig.Aliases.Count > 0)
+                {
+                    Console.WriteLine($"[CS2Utils] Command aliases: {string.Join(", ", commandConfig.Aliases)}");
+                }
             }
         }
 
@@ -91,38 +145,35 @@ namespace CS2Utilities.Core
         /// <param name="player">Player who executed the command</param>
         /// <param name="commandName">Command name (without ! prefix)</param>
         /// <param name="args">Command arguments</param>
-        /// <returns>True if command executed successfully</returns>
+        /// <returns>True if command executed successfully, false if command not found or failed</returns>
         public bool ExecuteCommand(CCSPlayerController? player, string commandName, string[] args)
         {
             var normalizedName = commandName.ToLower();
 
-            // Check if command exists
+            // Check if command exists in our plugin
             if (!_commands.TryGetValue(normalizedName, out var commandInfo))
             {
-                if (player != null)
-                {
-                    ChatUtils.PrintToPlayer(player, $"Unknown command: !{commandName}", MessageType.Error);
-                }
+                // Command not found in our plugin - let other plugins handle it
+                // Don't show "Unknown command" message as it might be handled elsewhere
                 return false;
             }
 
             // Check if command is disabled
-            if (!commandInfo.Enabled || _permissionManager.IsCommandDisabled(commandName))
+            if (!commandInfo.Enabled)
             {
                 if (player != null)
                 {
-                    ChatUtils.PrintCommandDisabled(player, commandName);
+                    ChatUtils.PrintToPlayer(player, $"Command '{commandName}' is disabled.", MessageType.Error);
                 }
                 return false;
             }
 
             // Check permissions
-            if (!_permissionManager.HasPermission(player, commandName))
+            if (!string.IsNullOrEmpty(commandInfo.Permission) && !_permissionManager.HasPermission(player, commandInfo.Permission))
             {
                 if (player != null)
                 {
-                    var requiredPermission = _permissionManager.GetRequiredPermission(normalizedName);
-                    ChatUtils.PrintPermissionDenied(player, commandName, requiredPermission);
+                    ChatUtils.PrintPermissionDenied(player, commandName, commandInfo.Permission);
                 }
                 return false;
             }
@@ -231,6 +282,17 @@ namespace CS2Utilities.Core
         }
 
         /// <summary>
+        /// Check if a command is registered in this plugin
+        /// </summary>
+        /// <param name="commandName">Command name</param>
+        /// <returns>True if command is registered in this plugin</returns>
+        public bool IsCommandRegistered(string commandName)
+        {
+            var normalizedName = commandName.ToLower();
+            return _commands.ContainsKey(normalizedName);
+        }
+
+        /// <summary>
         /// Get information about a command
         /// </summary>
         /// <param name="commandName">Command name</param>
@@ -260,7 +322,11 @@ namespace CS2Utilities.Core
             if (_commands.TryGetValue(normalizedName, out var commandInfo))
             {
                 commandInfo.Enabled = true;
-                _permissionManager.EnableCommand(commandName);
+                // Update config
+                if (_config.Commands.TryGetValue(normalizedName, out var configCommand))
+                {
+                    configCommand.Enabled = true;
+                }
             }
         }
 
@@ -274,7 +340,11 @@ namespace CS2Utilities.Core
             if (_commands.TryGetValue(normalizedName, out var commandInfo))
             {
                 commandInfo.Enabled = false;
-                _permissionManager.DisableCommand(commandName);
+                // Update config
+                if (_config.Commands.TryGetValue(normalizedName, out var configCommand))
+                {
+                    configCommand.Enabled = false;
+                }
             }
         }
 

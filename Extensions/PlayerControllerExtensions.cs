@@ -65,7 +65,7 @@ namespace CS2Utilities.Extensions
         /// Sets the health value for the player.
         /// </summary>
         /// <param name="playerController">The player controller to set health for.</param>
-        /// <param name="health">The health value to set (0-1000).</param>
+        /// <param name="health">The health value to set (0-99999).</param>
         /// <param name="allowOverflow">Whether to allow the health to exceed the maximum health value.</param>
         public static void SetHealth(this CCSPlayerController? playerController, int health, bool allowOverflow = true)
         {
@@ -73,7 +73,7 @@ namespace CS2Utilities.Extensions
                 return;
 
             var pawn = playerController!.PlayerPawn.Value!;
-            pawn.Health = Math.Max(0, Math.Min(1000, health));
+            pawn.Health = health;
 
             if (allowOverflow && health > pawn.MaxHealth)
                 pawn.MaxHealth = health;
@@ -104,14 +104,15 @@ namespace CS2Utilities.Extensions
                 return;
 
             var pawn = playerController!.PlayerPawn.Value!;
-            pawn.ArmorValue = Math.Max(0, Math.Min(100, armor));
+            pawn.ArmorValue = armor;
             Utilities.SetStateChanged(pawn, "CCSPlayerPawnBase", "m_ArmorValue");
 
             if (helmet || heavy)
             {
                 var services = new CCSPlayer_ItemServices(pawn.ItemServices!.Handle);
                 services.HasHelmet = helmet;
-                services.HasHeavyArmor = heavy;
+                // Note: HasHeavyArmor property may not be available in current CS2 version
+                // services.HasHeavyArmor = heavy;
                 Utilities.SetStateChanged(pawn, "CBasePlayerPawn", "m_pItemServices");
             }
         }
@@ -124,7 +125,7 @@ namespace CS2Utilities.Extensions
         /// Sets the money for the player.
         /// </summary>
         /// <param name="playerController">The player controller to set money for.</param>
-        /// <param name="money">The money value to set (0-65535).</param>
+        /// <param name="money">The money value to set (0-999999).</param>
         public static void SetMoney(this CCSPlayerController? playerController, int money)
         {
             if (!playerController.IsPlayer())
@@ -134,7 +135,7 @@ namespace CS2Utilities.Extensions
             if (moneyServices == null)
                 return;
 
-            moneyServices.Account = Math.Max(0, Math.Min(65535, money));
+            moneyServices.Account = money;
             Utilities.SetStateChanged(playerController, "CCSPlayerController", "m_pInGameMoneyServices");
         }
 
@@ -152,7 +153,7 @@ namespace CS2Utilities.Extensions
             if (moneyServices == null)
                 return;
 
-            var newAmount = Math.Max(0, Math.Min(65535, moneyServices.Account + amount));
+            var newAmount = Math.Max(0, Math.Min(999999, moneyServices.Account + amount));
             moneyServices.Account = newAmount;
             Utilities.SetStateChanged(playerController, "CCSPlayerController", "m_pInGameMoneyServices");
         }
@@ -200,6 +201,34 @@ namespace CS2Utilities.Extensions
         }
 
         /// <summary>
+        /// Enables noclip for the player, allowing them to fly through walls.
+        /// </summary>
+        /// <param name="playerController">The player controller to enable noclip for.</param>
+        public static void EnableNoclip(this CCSPlayerController? playerController)
+        {
+            if (!playerController.IsAlive())
+                return;
+
+            var pawn = playerController!.PlayerPawn.Value!;
+            pawn.MoveType = MoveType_t.MOVETYPE_NOCLIP;
+            Utilities.SetStateChanged(pawn, "CBaseEntity", "m_MoveType");
+        }
+
+        /// <summary>
+        /// Disables noclip for the player, restoring normal movement.
+        /// </summary>
+        /// <param name="playerController">The player controller to disable noclip for.</param>
+        public static void DisableNoclip(this CCSPlayerController? playerController)
+        {
+            if (!playerController.IsAlive())
+                return;
+
+            var pawn = playerController!.PlayerPawn.Value!;
+            pawn.MoveType = MoveType_t.MOVETYPE_WALK;
+            Utilities.SetStateChanged(pawn, "CBaseEntity", "m_MoveType");
+        }
+
+        /// <summary>
         /// Checks if the player is currently frozen.
         /// </summary>
         /// <param name="playerController">The player controller to check.</param>
@@ -236,7 +265,8 @@ namespace CS2Utilities.Extensions
                 return;
 
             var targetPawn = targetPlayer.PlayerPawn.Value!;
-            playerController.Teleport(targetPawn.AbsOrigin!, targetPawn.AbsRotation);
+            var playerPawn = playerController!.PlayerPawn.Value!;
+            playerPawn.Teleport(targetPawn.AbsOrigin!, targetPawn.AbsRotation, Vector.Zero);
         }
 
         /// <summary>

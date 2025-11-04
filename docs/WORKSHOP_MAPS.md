@@ -79,7 +79,7 @@ The CS2Utilities plugin provides enhanced workshop map support with automatic ga
 ### Command Syntax
 
 ```
-!changemap <mapname|workshop/ID|workshopID|steamURL> [category]
+!changemap <mapname|workshop/ID|workshopID|steamURL> [category|nomode]
 ```
 
 **Parameters:**
@@ -88,6 +88,7 @@ The CS2Utilities plugin provides enhanced workshop map support with automatic ga
 - `workshopID`: Just the workshop ID number
 - `steamURL`: Full Steam Workshop URL
 - `category` (optional): Force specific category (aim, surf, 1v1, etc.)
+- `nomode` (optional): Skip automatic game mode changes (keeps current settings)
 
 ### Usage Examples
 
@@ -95,9 +96,16 @@ The CS2Utilities plugin provides enhanced workshop map support with automatic ga
 # Regular map (no special settings)
 !changemap de_dust2
 
-# Workshop map with auto-detection
+# Workshop map with auto-detection (numeric ID)
 !changemap 3070244931
 # → Detects "aim" category, applies aim training settings
+
+# Workshop map with auto-detection (map name)
+!changemap 1v1v1v1
+# → Auto-detects as workshop map, applies appropriate settings
+
+!changemap aim_botz
+# → Auto-detects as workshop map with "aim" category
 
 # Workshop map with manual category
 !changemap workshop/123456789 surf
@@ -110,6 +118,14 @@ The CS2Utilities plugin provides enhanced workshop map support with automatic ga
 # Using favorites (if configured)
 !changemap aim_botz
 # → Uses predefined settings from WorkshopMapFavorites
+
+# Skip automatic game mode changes
+!changemap 3070244931 nomode
+# → Changes to workshop map but keeps current game mode/settings
+
+# Alternative keywords for skipping mode changes
+!changemap aim_botz keep
+!changemap workshop/123456789 none
 ```
 
 ## Automatic Game Mode Detection
@@ -119,6 +135,27 @@ The plugin automatically detects map categories using:
 1. **Map Name Patterns**: Recognizes common prefixes and keywords
 2. **Workshop Favorites**: Uses configured favorites with predefined categories
 3. **Manual Override**: Allows specifying category as second parameter
+4. **Skip Mode Changes**: Use special keywords to prevent automatic mode changes
+
+### Preventing Automatic Mode Changes
+
+Sometimes you want to change to a workshop map but keep your current game mode and settings. Use these special keywords as the second parameter:
+
+- `nomode` - Skip all automatic game mode changes
+- `keep` - Keep current settings (same as nomode)
+- `none` - Don't apply any category settings (same as nomode)
+
+**Examples:**
+```bash
+# Change to aim map but keep current competitive settings
+!changemap 3070244931 nomode
+
+# Change to surf map but keep current casual settings
+!changemap surf_ski2 keep
+
+# Change using workshop URL but don't change mode
+!changemap https://steamcommunity.com/sharedfiles/filedetails/?id=123456789 none
+```
 
 ### Detection Patterns
 

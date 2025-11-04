@@ -42,26 +42,26 @@ namespace CS2Utilities.Core
             // Handle special targets
             switch (normalizedTarget)
             {
-                case "all":
+                case "@all":
                     return ResolveAllPlayers(result);
                 
-                case "ct":
-                case "counterterrorist":
-                case "counterterrorists":
+                case "@ct":
+                case "@counterterrorist":
+                case "@counterterrorists":
                     return ResolveTeamPlayers(result, CsTeam.CounterTerrorist);
                 
-                case "t":
-                case "terrorist":
-                case "terrorists":
+                case "@t":
+                case "@terrorist":
+                case "@terrorists":
                     return ResolveTeamPlayers(result, CsTeam.Terrorist);
                 
-                case "spec":
-                case "spectator":
-                case "spectators":
+                case "@spec":
+                case "@spectator":
+                case "@spectators":
                     return ResolveTeamPlayers(result, CsTeam.Spectator);
                 
-                case "self":
-                case "me":
+                case "@self":
+                case "@me":
                     return ResolveSelfTarget(result, caller);
                 
                 default:
@@ -199,9 +199,9 @@ namespace CS2Utilities.Core
             var normalizedTarget = target.ToLower().Trim();
             
             // Check for known special targets
-            var specialTargets = new[] { "all", "ct", "counterterrorist", "counterterrorists", 
-                                       "t", "terrorist", "terrorists", "spec", "spectator", 
-                                       "spectators", "self", "me" };
+            var specialTargets = new[] { "@all", "@ct", "@counterterrorist", "@counterterrorists", 
+                                       "@t", "@terrorist", "@terrorists", "spec", "spectator", 
+                                       "@spectators", "@self", "@me" };
             
             if (specialTargets.Contains(normalizedTarget))
                 return true;
@@ -231,9 +231,9 @@ namespace CS2Utilities.Core
             
             return normalizedTeam switch
             {
-                "ct" or "counterterrorist" or "counterterrorists" => CsTeam.CounterTerrorist,
-                "t" or "terrorist" or "terrorists" => CsTeam.Terrorist,
-                "spec" or "spectator" or "spectators" => CsTeam.Spectator,
+                "@ct" or "@counterterrorist" or "@counterterrorists" => CsTeam.CounterTerrorist,
+                "@t" or "@terrorist" or "@terrorists" => CsTeam.Terrorist,
+                "@spec" or "@spectator" or "@spectators" => CsTeam.Spectator,
                 _ => null
             };
         }

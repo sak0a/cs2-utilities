@@ -3,6 +3,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Events;
 using CounterStrikeSharp.API.Modules.Timers;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API.Modules.Cvars;
 using CS2Utilities.Core;
 using CS2Utilities.Models;
 using CS2Utilities.Utils;
@@ -21,7 +22,9 @@ namespace CS2Utilities.Commands
         // Advanced state tracking
         private readonly Dictionary<ulong, CounterStrikeSharp.API.Modules.Timers.Timer> _immunityTimers;
         private readonly Dictionary<ulong, bool> _immunePlayers;
-        private readonly Dictionary<ulong, bool> _bhopPlayers;
+        private readonly Dictionary<ulong, bool> _godModePlayers;
+        private string _bhopMode = "off"; // "off", "matchmaking", "supernatural"
+        private string _lastBhopMode = "matchmaking"; // Remember last used mode for toggling
         private string _defaultPrimary = "";
         private string _defaultSecondary = "";
 
@@ -32,7 +35,7 @@ namespace CS2Utilities.Commands
             _targetResolver = targetResolver;
             _immunityTimers = new Dictionary<ulong, CounterStrikeSharp.API.Modules.Timers.Timer>();
             _immunePlayers = new Dictionary<ulong, bool>();
-            _bhopPlayers = new Dictionary<ulong, bool>();
+            _godModePlayers = new Dictionary<ulong, bool>();
         }
 
         /// <summary>
@@ -50,14 +53,18 @@ namespace CS2Utilities.Commands
 
             // Bunny hop command
             _commandManager.RegisterCommand("bhop", HandleBhopCommand,
-                "Toggle bunny hopping", "<player|team|all>", "@css/root", 1, 1);
+                "Set bunny hopping mode", "[off|matchmaking|supernatural]", "@css/root", 0, 1);
 
             // Default weapon commands
             _commandManager.RegisterCommand("defaultprimary", HandleDefaultPrimaryCommand,
                 "Set default primary weapon", "<weapon>", "@css/root", 1, 1);
-            
+
             _commandManager.RegisterCommand("defaultsecondary", HandleDefaultSecondaryCommand,
                 "Set default secondary weapon", "<weapon>", "@css/root", 1, 1);
+
+            // God mode command
+            _commandManager.RegisterCommand("god", HandleGodModeCommand,
+                "Toggle god mode for yourself", "", "@css/root", 0, 0);
         }
 
         #region Instant Respawn Command
@@ -192,48 +199,149 @@ namespace CS2Utilities.Commands
         {
             try
             {
-                var targets = _targetResolver.ResolveTargets(args[0], player);
-                if (targets == null || !targets.IsValid)
-                {
-                    if (player != null)
-                        ChatUtils.PrintToPlayer(player, targets?.ErrorMessage ?? "Invalid target.", MessageType.Error);
-                    return false;
-                }
+                string mode;
 
-                var successCount = 0;
-                foreach (var target in targets.Players)
+                if (args.Length == 0)
                 {
-                    if (target.IsValid && !target.IsBot && target.PawnIsAlive)
+                    // Toggle mode: if off, use last mode; if on, turn off
+                    mode = _bhopMode == "off" ? _lastBhopMode : "off";
+                }
+                else
+                {
+                    mode = args[0].ToLower();
+
+                    // Validate mode
+                    if (mode != "off" && mode != "matchmaking" && mode != "supernatural")
                     {
-                        var currentState = _bhopPlayers.ContainsKey(target.SteamID) && _bhopPlayers[target.SteamID];
-                        var newState = !currentState;
-                        
-                        _bhopPlayers[target.SteamID] = newState;
-                        
-                        var statusText = newState ? "enabled" : "disabled";
-                        ChatUtils.PrintToPlayer(target, $"Bunny hopping {statusText}", MessageType.Success);
-                        successCount++;
+                        if (player != null)
+                            ChatUtils.PrintToPlayer(player, "Invalid mode. Use: off, matchmaking, supernatural, or no argument to toggle", MessageType.Error);
+                        return false;
                     }
                 }
 
-                // Save bhop states
-                _stateManager.SaveState("bhop_players", _bhopPlayers.Where(kvp => kvp.Value).Select(kvp => kvp.Key).ToList());
+                // Remember the last non-off mode for toggling
+                if (mode != "off")
+                {
+                    _lastBhopMode = mode;
+                    _stateManager.SaveState("last_bhop_mode", _lastBhopMode);
+                }
+
+                // Apply the bhop mode
+                ApplyBhopMode(mode);
+
+                _bhopMode = mode;
+                _stateManager.SaveState("bhop_mode", _bhopMode);
 
                 // Provide feedback
-                var message = $"Toggled bunny hopping for {successCount} player(s)";
+                var message = $"Bunny hopping mode set to: {mode}";
                 if (player != null)
                     ChatUtils.PrintToPlayer(player, message, MessageType.Success);
                 else
                     Console.WriteLine($"[CS2Utils] {message}");
 
-                return successCount > 0;
+                // Notify all players
+                var players = Utilities.GetPlayers();
+                foreach (var p in players)
+                {
+                    if (p.IsValid && !p.IsBot && p != player)
+                    {
+                        ChatUtils.PrintToPlayer(p, $"Server bunny hopping mode: {mode}", MessageType.Info);
+                    }
+                }
+
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[CS2Utils] Error toggling bhop: {ex.Message}");
+                Console.WriteLine($"[CS2Utils] Error setting bhop mode: {ex.Message}");
                 if (player != null)
-                    ChatUtils.PrintToPlayer(player, "Failed to toggle bunny hopping.", MessageType.Error);
+                    ChatUtils.PrintToPlayer(player, "Failed to set bunny hopping mode.", MessageType.Error);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Remove cheat flag from a console variable
+        /// </summary>
+        private void RemoveCheatFlagFromConVar(string convar_name)
+        {
+            try
+            {
+                // Try to find and modify the convar using CounterStrikeSharp API
+                var convar = ConVar.Find(convar_name);
+                if (convar != null)
+                {
+                    convar.Flags &= ~ConVarFlags.FCVAR_CHEAT;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CS2Utils] Error removing cheat flag from {convar_name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Apply bunny hopping mode to the server
+        /// </summary>
+        private void ApplyBhopMode(string mode)
+        {
+            try
+            {
+                // Remove cheat flags from bhop-related convars so we don't need sv_cheats 1
+                RemoveCheatFlagFromConVar("sv_enablebunnyhopping");
+                RemoveCheatFlagFromConVar("sv_maxvelocity");
+                RemoveCheatFlagFromConVar("sv_autobunnyhopping");
+                RemoveCheatFlagFromConVar("sv_airaccelerate");
+                RemoveCheatFlagFromConVar("sv_accelerate_use_weapon_speed");
+
+                switch (mode.ToLower())
+                {
+                    case "off":
+                        // Disable bunny hopping - restore default settings
+                        Server.ExecuteCommand("sv_enablebunnyhopping 0");
+                        Server.ExecuteCommand("sv_maxvelocity 3500");
+                        Server.ExecuteCommand("sv_staminamax 80");
+                        Server.ExecuteCommand("sv_staminalandcost 0.050");
+                        Server.ExecuteCommand("sv_staminajumpcost 0.080");
+                        Server.ExecuteCommand("sv_accelerate_use_weapon_speed 1");
+                        Server.ExecuteCommand("sv_staminarecoveryrate 60");
+                        Server.ExecuteCommand("sv_autobunnyhopping 0");
+                        Server.ExecuteCommand("sv_airaccelerate 12");
+                        Console.WriteLine("[CS2Utils] Bunny hopping disabled - normal settings restored");
+                        break;
+
+                    case "matchmaking":
+                        // Normal bunny hopping - competitive settings
+                        Server.ExecuteCommand("sv_enablebunnyhopping 1");
+                        Server.ExecuteCommand("sv_maxvelocity 3500");
+                        Server.ExecuteCommand("sv_staminamax 0");
+                        Server.ExecuteCommand("sv_staminalandcost 0.050");
+                        Server.ExecuteCommand("sv_staminajumpcost 0.080");
+                        Server.ExecuteCommand("sv_accelerate_use_weapon_speed 0");
+                        Server.ExecuteCommand("sv_staminarecoveryrate 0");
+                        Server.ExecuteCommand("sv_autobunnyhopping 1");
+                        Server.ExecuteCommand("sv_airaccelerate 12");
+                        Console.WriteLine("[CS2Utils] Bunny hopping enabled - matchmaking mode");
+                        break;
+
+                    case "supernatural":
+                        // Fast/uncapped bunny hopping - fun mode
+                        Server.ExecuteCommand("sv_enablebunnyhopping 1");
+                        Server.ExecuteCommand("sv_maxvelocity 7000");
+                        Server.ExecuteCommand("sv_staminamax 0");
+                        Server.ExecuteCommand("sv_staminalandcost 0");
+                        Server.ExecuteCommand("sv_staminajumpcost 0");
+                        Server.ExecuteCommand("sv_accelerate_use_weapon_speed 0");
+                        Server.ExecuteCommand("sv_staminarecoveryrate 0");
+                        Server.ExecuteCommand("sv_autobunnyhopping 1");
+                        Server.ExecuteCommand("sv_airaccelerate 2000");
+                        Console.WriteLine("[CS2Utils] Bunny hopping enabled - supernatural mode");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CS2Utils] Error applying bhop mode: {ex.Message}");
             }
         }
 
@@ -342,3 +450,198 @@ namespace CS2Utilities.Commands
         }
 
         #endregion
+
+        #region God Mode Command
+
+        /// <summary>
+        /// Handle !god command - executes the actual god console command for the player
+        /// </summary>
+        private bool HandleGodModeCommand(CCSPlayerController? player, string[] args)
+        {
+            try
+            {
+                // Only works for players, not console
+                if (player == null)
+                {
+                    Console.WriteLine("[CS2Utils] God command can only be used by players");
+                    return false;
+                }
+
+                // Player must be alive
+                if (!player.PawnIsAlive)
+                {
+                    ChatUtils.PrintToPlayer(player, "You must be alive to use god mode", MessageType.Error);
+                    return false;
+                }
+
+                // Remove cheat flag from god command so it works without sv_cheats
+                RemoveCheatFlagFromConVar("god");
+
+                // Execute the actual god command for the player
+                player.ExecuteClientCommand("god");
+
+                // Track god mode state for feedback (toggle tracking)
+                var isCurrentlyGod = _godModePlayers.ContainsKey(player.SteamID);
+
+                if (isCurrentlyGod)
+                {
+                    _godModePlayers.Remove(player.SteamID);
+                    ChatUtils.PrintToPlayer(player, "God mode toggled", MessageType.Info);
+                }
+                else
+                {
+                    _godModePlayers[player.SteamID] = true;
+                    ChatUtils.PrintToPlayer(player, "God mode toggled", MessageType.Info);
+                }
+
+                // Save state
+                _stateManager.SaveState("god_mode_players", _godModePlayers.Keys.ToList());
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CS2Utils] Error executing god command: {ex.Message}");
+                if (player != null)
+                    ChatUtils.PrintToPlayer(player, "Failed to execute god command", MessageType.Error);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Event Hooks
+
+        /// <summary>
+        /// Event hook for damage immunity and god mode
+        /// </summary>
+        public HookResult OnPlayerHurt(EventPlayerHurt @event, GameEventInfo info)
+        {
+            var victim = @event.Userid;
+            if (victim != null)
+            {
+                var steamId = victim.SteamID;
+
+                // Check for temporary immunity or god mode
+                if (_immunePlayers.ContainsKey(steamId) ||
+                    (_godModePlayers.ContainsKey(steamId) && _godModePlayers[steamId]))
+                {
+                    // Block damage by setting it to 0
+                    @event.DmgHealth = 0;
+                    @event.DmgArmor = 0;
+                    return HookResult.Changed;
+                }
+            }
+
+            return HookResult.Continue;
+        }
+
+        /// <summary>
+        /// Event hook for player spawn to apply default weapons
+        /// </summary>
+        public HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
+        {
+            var player = @event.Userid;
+            if (player != null && player.IsValid && !player.IsBot)
+            {
+                // Apply default weapons after a short delay
+                new CounterStrikeSharp.API.Modules.Timers.Timer(0.1f, () =>
+                {
+                    ApplyDefaultWeapons(player);
+                });
+            }
+
+            return HookResult.Continue;
+        }
+
+        /// <summary>
+        /// Apply default weapons to a player
+        /// </summary>
+        private void ApplyDefaultWeapons(CCSPlayerController player)
+        {
+            try
+            {
+                if (!player.IsValid || !player.PawnIsAlive)
+                    return;
+
+                // Give default primary weapon
+                if (!string.IsNullOrEmpty(_defaultPrimary))
+                {
+                    player.GiveNamedItem($"weapon_{_defaultPrimary}");
+                }
+
+                // Give default secondary weapon
+                if (!string.IsNullOrEmpty(_defaultSecondary))
+                {
+                    player.GiveNamedItem($"weapon_{_defaultSecondary}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CS2Utils] Error applying default weapons: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region State Management
+
+        /// <summary>
+        /// Cleanup resources and state
+        /// </summary>
+        public void Cleanup()
+        {
+            try
+            {
+                // Clear all immunity timers
+                foreach (var timer in _immunityTimers.Values)
+                {
+                    timer?.Kill();
+                }
+                _immunityTimers.Clear();
+                _immunePlayers.Clear();
+                _godModePlayers.Clear();
+
+                // Reset bhop mode to off on cleanup
+                if (_bhopMode != "off")
+                {
+                    ApplyBhopMode("off");
+                }
+
+                Console.WriteLine("[CS2Utils] Advanced player commands cleaned up");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CS2Utils] Error during advanced player commands cleanup: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Cleanup player-specific data when they disconnect
+        /// </summary>
+        public void CleanupPlayer(ulong steamId)
+        {
+            try
+            {
+                // Remove immunity timer if exists
+                if (_immunityTimers.ContainsKey(steamId))
+                {
+                    _immunityTimers[steamId]?.Kill();
+                    _immunityTimers.Remove(steamId);
+                }
+
+                // Remove immunity status
+                _immunePlayers.Remove(steamId);
+
+                // Remove god mode status
+                _godModePlayers.Remove(steamId);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CS2Utils] Error cleaning up player {steamId}: {ex.Message}");
+            }
+        }
+
+        #endregion
+    }
+}
